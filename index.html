@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>SVALKA</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Involve:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="src/style.css">
+</head>
+<body>
+    <div id="game-container">
+        <!-- Header -->
+        <header id="header">
+            <div class="logo">SVALKA</div>
+            <div class="header-right">
+                <div id="event-timer">🔥 День воровства: <span id="event-countdown">00:00</span></div>
+                <div class="money">
+                    <span>₽</span>
+                    <span id="money-value">0</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Tabs -->
+        <nav id="tabs">
+            <div class="tab active" data-tab="merge">
+                <span class="tab-icon">📦</span>
+                <span>Склад</span>
+            </div>
+            <div class="tab" data-tab="bales">
+                <span class="tab-icon">🎁</span>
+                <span>Тюки</span>
+            </div>
+            <div class="tab" data-tab="raiders">
+                <span class="tab-icon">🛒</span>
+                <span>Байеры</span>
+                <span class="tab-badge" id="raiders-badge" style="display:none">!</span>
+            </div>
+            <div class="tab" data-tab="auction">
+                <span class="tab-icon">🔨</span>
+                <span>Аукцион</span>
+            </div>
+        </nav>
+
+        <!-- Main content -->
+        <main id="main">
+            <!-- СКЛАД -->
+            <div class="panel active" id="panel-merge">
+                <div id="merge-field"></div>
+                <div class="grade-legend">
+                    <div class="grade-item"><span class="dot g1"></span>Масс</div>
+                    <div class="grade-item"><span class="dot g2"></span>Базовый</div>
+                    <div class="grade-item"><span class="dot g3"></span>Хороший</div>
+                    <div class="grade-item"><span class="dot g4"></span>Редкий</div>
+                    <div class="grade-item"><span class="dot g5"></span>Грааль</div>
+                </div>
+                <div id="merge-controls">
+                    <button id="btn-quick-bale" class="btn btn-primary">
+                        <span class="btn-icon">📦</span>
+                        <span class="btn-text">Тюк</span>
+                        <span class="btn-price">₽100</span>
+                    </button>
+                    <button id="btn-sell-all" class="btn btn-secondary">
+                        <span class="btn-icon">💰</span>
+                        <span class="btn-text">Продать</span>
+                    </button>
+                    <button id="btn-upgrades" class="btn btn-secondary">
+                        <span class="btn-icon">⬆️</span>
+                        <span class="btn-text">Улучшения</span>
+                    </button>
+                    <button id="btn-event" class="btn btn-secondary" style="display:none">
+                        <span class="btn-icon">🔥</span>
+                        <span class="btn-text">Воровство!</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- ТЮКИ -->
+            <div class="panel" id="panel-bales">
+                <div class="bale-card">
+                    <div class="bale-icon">📦</div>
+                    <div class="bale-info">
+                        <div class="bale-name">Европа</div>
+                        <div class="bale-desc">Стандартный микс из Германии</div>
+                        <div class="bale-stats">3-6 вещей • Шанс синего: 20%</div>
+                    </div>
+                    <button class="bale-btn" data-bale="europe">₽100</button>
+                </div>
+                <div class="bale-card">
+                    <div class="bale-icon">🇯🇵</div>
+                    <div class="bale-info">
+                        <div class="bale-name">Япония</div>
+                        <div class="bale-desc">Качественный японский винтаж</div>
+                        <div class="bale-stats">2-4 вещи • Шанс фиолетового: 15%</div>
+                    </div>
+                    <button class="bale-btn" data-bale="japan">₽350</button>
+                </div>
+                <div class="bale-card">
+                    <div class="bale-icon">🇺🇸</div>
+                    <div class="bale-info">
+                        <div class="bale-name">USA Vintage</div>
+                        <div class="bale-desc">Американская классика 70-80х</div>
+                        <div class="bale-stats">3-5 вещей • Шанс оранжевого: 10%</div>
+                    </div>
+                    <button class="bale-btn" data-bale="usa">₽500</button>
+                </div>
+                <div class="bale-card">
+                    <div class="bale-icon">☭</div>
+                    <div class="bale-info">
+                        <div class="bale-name">СССР</div>
+                        <div class="bale-desc">Советский dead stock</div>
+                        <div class="bale-stats">1-3 вещи • Шанс грааля: 5%</div>
+                    </div>
+                    <button class="bale-btn" data-bale="ussr">₽1000</button>
+                </div>
+            </div>
+
+            <!-- БАЙЕРЫ -->
+            <div class="panel" id="panel-raiders">
+                <div class="raider-card" data-raider="0">
+                    <div class="raider-header">
+                        <div class="raider-avatar">🧔</div>
+                        <div class="raider-info">
+                            <div class="raider-name">Борис</div>
+                            <div class="raider-level">Уровень 1 • Стажёр</div>
+                        </div>
+                        <div class="raider-status idle">Свободен</div>
+                    </div>
+                    <div class="raider-progress"><div class="raider-progress-bar" style="width: 0%"></div></div>
+                    <div class="raider-locations">
+                        <button class="location-btn" data-location="grandma">🏚️ Бабушкин чердак <span class="loc-time">30с</span></button>
+                        <button class="location-btn" data-location="flea">🏪 Блошиный рынок <span class="loc-time">1м</span></button>
+                        <button class="location-btn" data-location="warehouse">🏭 Заброшенный склад <span class="loc-time">2м</span></button>
+                    </div>
+                    <button class="raider-collect">📥 Забрать закупку!</button>
+                </div>
+                <div class="raider-card" data-raider="1">
+                    <div class="raider-header">
+                        <div class="raider-avatar">👩</div>
+                        <div class="raider-info">
+                            <div class="raider-name">Маша</div>
+                            <div class="raider-level">Уровень 1 • Стажёр</div>
+                        </div>
+                        <div class="raider-status idle">Свободна</div>
+                    </div>
+                    <div class="raider-progress"><div class="raider-progress-bar" style="width: 0%"></div></div>
+                    <div class="raider-locations">
+                        <button class="location-btn" data-location="grandma">🏚️ Бабушкин чердак <span class="loc-time">30с</span></button>
+                        <button class="location-btn" data-location="flea">🏪 Блошиный рынок <span class="loc-time">1м</span></button>
+                        <button class="location-btn" data-location="warehouse">🏭 Заброшенный склад <span class="loc-time">2м</span></button>
+                    </div>
+                    <button class="raider-collect">📥 Забрать закупку!</button>
+                </div>
+            </div>
+
+            <!-- АУКЦИОН -->
+            <div class="panel" id="panel-auction">
+                <div class="auction-slot empty" id="auction-slot-0">
+                    <div class="plus">+</div>
+                    <div class="hint">Выставить вещь на аукцион</div>
+                </div>
+                <div class="auction-slot empty" id="auction-slot-1">
+                    <div class="plus">+</div>
+                    <div class="hint">Выставить вещь на аукцион</div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Item picker modal -->
+    <div id="item-picker">
+        <div class="picker-content">
+            <h3 class="picker-title">Выбери вещь для аукциона</h3>
+            <div class="picker-grid" id="picker-grid"></div>
+            <button class="picker-close" id="picker-close">Отмена</button>
+        </div>
+    </div>
+
+    <!-- Upgrades modal -->
+    <div id="upgrades-modal">
+        <div class="modal-content">
+            <h3 class="picker-title">Улучшения</h3>
+            <div class="upgrades-list">
+                <div class="upgrade-item">
+                    <div class="upgrade-info">
+                        <div class="upgrade-name">📦 Качество тюков</div>
+                        <div class="upgrade-desc">Выше шанс редких вещей</div>
+                    </div>
+                    <div class="upgrade-right">
+                        <div class="upgrade-level">Ур. <span id="upgrade-bale-level">1</span></div>
+                        <button class="upgrade-btn" id="btn-upgrade-bale">₽<span id="upgrade-bale-cost">500</span></button>
+                    </div>
+                </div>
+                <div class="upgrade-item">
+                    <div class="upgrade-info">
+                        <div class="upgrade-name">💰 Торговля</div>
+                        <div class="upgrade-desc">+20% к цене продажи</div>
+                    </div>
+                    <div class="upgrade-right">
+                        <div class="upgrade-level">Ур. <span id="upgrade-sell-level">1</span></div>
+                        <button class="upgrade-btn" id="btn-upgrade-sell">₽<span id="upgrade-sell-cost">750</span></button>
+                    </div>
+                </div>
+                <div class="upgrade-item">
+                    <div class="upgrade-info">
+                        <div class="upgrade-name">🛒 Опыт байеров</div>
+                        <div class="upgrade-desc">Быстрее закупки, лучше находки</div>
+                    </div>
+                    <div class="upgrade-right">
+                        <div class="upgrade-level">Ур. <span id="upgrade-raider-level">1</span></div>
+                        <button class="upgrade-btn" id="btn-upgrade-raider">₽<span id="upgrade-raider-cost">1000</span></button>
+                    </div>
+                </div>
+            </div>
+            <button class="picker-close" id="upgrades-close">Закрыть</button>
+        </div>
+    </div>
+
+    <!-- Event overlay -->
+    <div id="event-overlay"></div>
+
+    <!-- Toasts -->
+    <div id="toast-container"></div>
+
+    <script src="src/game.js"></script>
+</body>
+</html>
