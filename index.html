@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Involve:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="src/style.css">
+    <script src="https://yandex.ru/games/sdk/v2"></script>
 </head>
 <body>
     <div id="game-container">
@@ -15,6 +16,7 @@
         <header id="header">
             <div class="logo">SVALKA</div>
             <div class="header-right">
+                <button id="btn-leaderboard" class="btn-header-icon" style="display:none">🏆</button>
                 <button id="btn-mute" class="btn-mute-toggle">🔊</button>
                 <div id="event-timer">
                     <span id="event-name">🔥 День воровства</span>: <span id="event-countdown">00:00</span>
@@ -257,6 +259,15 @@
                 </div>
             </div>
             <button class="picker-close" id="upgrades-close">Закрыть</button>
+        </div>
+    </div>
+
+    <!-- Leaderboard modal -->
+    <div id="leaderboard-modal">
+        <div class="modal-content">
+            <h3 class="picker-title">🏆 Рейтинг</h3>
+            <div id="leaderboard-list" class="leaderboard-list"></div>
+            <button class="picker-close" id="leaderboard-close">Закрыть</button>
         </div>
     </div>
 

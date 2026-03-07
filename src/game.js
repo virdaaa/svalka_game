@@ -231,6 +231,103 @@ const SoundEngine = {
 };
 
 // ==========================================
+// YANDEX GAMES SDK
+// ==========================================
+
+let ysdk = null;
+let ysdkPlayer = null;
+
+async function initYandexSDK() {
+    try {
+        ysdk = await YaGames.init();
+
+        // Try to get player (may not be authenticated)
+        try {
+            ysdkPlayer = await ysdk.getPlayer({ scopes: false });
+        } catch (e) {
+            ysdkPlayer = null;
+        }
+
+        // Show leaderboard button
+        $('btn-leaderboard').style.display = 'block';
+
+        // Signal game ready
+        ysdk.features.LoadingAPI?.ready();
+    } catch (e) {
+        // SDK not available (local dev, etc.)
+        ysdk = null;
+    }
+}
+
+async function submitLeaderboardScore() {
+    if (!ysdk) return;
+    try {
+        const lb = await ysdk.getLeaderboards();
+        await lb.setLeaderboardScore('total_earned', Math.floor(state.stats.totalEarned));
+    } catch (e) {
+        // Not authenticated — silently ignore
+    }
+}
+
+async function showLeaderboard() {
+    const modal = $('leaderboard-modal');
+    const list = $('leaderboard-list');
+
+    modal.classList.add('active');
+    list.innerHTML = '<div class="lb-loading">Загрузка...</div>';
+
+    if (!ysdk) {
+        list.innerHTML = '<div class="lb-error">Рейтинг недоступен</div>';
+        return;
+    }
+
+    // Check auth — prompt if needed
+    if (!ysdkPlayer || ysdkPlayer.getMode() === 'lite') {
+        try {
+            await ysdk.auth.openAuthDialog();
+            ysdkPlayer = await ysdk.getPlayer({ scopes: false });
+            // Submit current score after auth
+            await submitLeaderboardScore();
+        } catch (e) {
+            // User declined auth — still show board
+        }
+    }
+
+    try {
+        const lb = await ysdk.getLeaderboards();
+        const result = await lb.getLeaderboardEntries('total_earned', {
+            quantityTop: 10,
+            includeUser: true,
+        });
+
+        if (!result.entries || result.entries.length === 0) {
+            list.innerHTML = '<div class="lb-error">Пока нет записей</div>';
+            return;
+        }
+
+        const selfId = ysdkPlayer ? ysdkPlayer.getUniqueID() : null;
+
+        list.innerHTML = result.entries.map(entry => {
+            const name = entry.player.publicName || 'Игрок';
+            const isSelf = selfId && entry.player.uniqueID === selfId;
+            return `
+                <div class="lb-row ${isSelf ? 'lb-self' : ''}">
+                    <span class="lb-rank">#${entry.rank}</span>
+                    <span class="lb-name">${name}</span>
+                    <span class="lb-score">₽${formatNumber(entry.score)}</span>
+                </div>
+            `;
+        }).join('');
+    } catch (e) {
+        list.innerHTML = '<div class="lb-error">Не удалось загрузить рейтинг</div>';
+    }
+}
+
+function closeLeaderboard() {
+    $('leaderboard-modal').classList.remove('active');
+}
+
+// ==========================================
 // INITIALIZATION
 // ==========================================
 
@@ -242,8 +339,10 @@ function init() {
     setupRaiders();
     setupAuction();
     setupSoundToggle();
+    setupLeaderboard();
     SoundEngine.init();
     MusicManager.init();
+    initYandexSDK();
     loadGame();
     updateUI();
     startGameLoop();
@@ -253,6 +352,14 @@ function init() {
 
     // Check for event
     maybeStartEvent();
+}
+
+function setupLeaderboard() {
+    $('btn-leaderboard').addEventListener('click', showLeaderboard);
+    $('leaderboard-close').addEventListener('click', closeLeaderboard);
+    $('leaderboard-modal').addEventListener('click', (e) => {
+        if (e.target === $('leaderboard-modal')) closeLeaderboard();
+    });
 }
 
 function createGrid() {
@@ -483,6 +590,7 @@ function handleCellClick(index) {
         showToast(`🔥 Украдено! +₽${value}`, 'event');
         renderGrid();
         updateUI();
+        submitLeaderboardScore();
         saveGame();
         return;
     }
@@ -666,6 +774,7 @@ function sellAll() {
         advanceTutorial();
     }
 
+    submitLeaderboardScore();
     saveGame();
 }
 
@@ -930,6 +1039,7 @@ function acceptBid(slotIndex) {
     renderAuctions();
     updateUI();
     showToast(`${bestBid.buyer} купил за ₽${bestBid.price}!`, 'money');
+    submitLeaderboardScore();
     saveGame();
 }
 
@@ -1168,6 +1278,7 @@ function checkOrders(soldItems) {
         initOrders();
         renderOrders();
         updateUI();
+        submitLeaderboardScore();
     }
 }
 
