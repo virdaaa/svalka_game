@@ -42,6 +42,27 @@ const LOCATIONS = {
 
 const NPC_BUYERS = ['Коллекционер', 'Хипстер', 'Перекуп', 'Дизайнер', 'Блогер'];
 
+const EVENT_TYPES = {
+    theft: {
+        name: 'День воровства',
+        icon: '🔥',
+        duration: 30000,
+        description: 'Хватай всё бесплатно!',
+    },
+    market: {
+        name: 'Рынок на чёрной речке',
+        icon: '🏴',
+        duration: 45000,
+        description: 'Все продажи x2!',
+    },
+    container: {
+        name: 'Контейнер в порту',
+        icon: '🚢',
+        duration: 30000,
+        description: 'Редкие вещи на поле!',
+    },
+};
+
 // ==========================================
 // STATE
 // ==========================================
@@ -60,8 +81,19 @@ const state = {
         sellBonus: { level: 1, cost: 750 },
         raiderSpeed: { level: 1, cost: 1000 },
     },
-    event: { active: false, endTime: null },
+    event: { active: false, type: null, endTime: null },
     lastEventTime: 0,
+    tutorialComplete: false,
+    tutorialStep: 0,
+    stats: {
+        totalEarned: 0,
+        itemsSold: 0,
+        bestGrade: 1,
+        balesOpened: 0,
+        mergesDone: 0,
+    },
+    orders: [],
+    lastSaveTime: Date.now(),
 };
 
 // ==========================================
@@ -70,6 +102,133 @@ const state = {
 
 const $ = id => document.getElementById(id);
 const $$ = sel => document.querySelectorAll(sel);
+
+// ==========================================
+// SOUND ENGINE (Web Audio API)
+// ==========================================
+
+const SoundEngine = {
+    ctx: null,
+    muted: false,
+
+    init() {
+        // Lazy-init on first user gesture
+        const unlock = () => {
+            if (!this.ctx) {
+                this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            document.removeEventListener('click', unlock);
+            document.removeEventListener('touchstart', unlock);
+        };
+        document.addEventListener('click', unlock);
+        document.addEventListener('touchstart', unlock);
+    },
+
+    _play(fn) {
+        if (this.muted || !this.ctx) return;
+        try { fn(this.ctx); } catch(e) { /* ignore */ }
+    },
+
+    // Merge: ascending tone, higher for rare grades
+    merge(grade) {
+        this._play(ctx => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.type = 'sine';
+            const baseFreq = 400 + grade * 150;
+            osc.frequency.setValueAtTime(baseFreq, ctx.currentTime);
+            osc.frequency.linearRampToValueAtTime(baseFreq + 300 + grade * 100, ctx.currentTime + 0.2);
+            gain.gain.setValueAtTime(0.15, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+            osc.start(ctx.currentTime);
+            osc.stop(ctx.currentTime + 0.35);
+        });
+    },
+
+    // Bale open: unpack crinkle sound
+    baleOpen() {
+        this._play(ctx => {
+            const bufferSize = ctx.sampleRate * 0.15;
+            const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+            }
+            const noise = ctx.createBufferSource();
+            noise.buffer = buffer;
+            const filter = ctx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.value = 3000;
+            filter.Q.value = 0.5;
+            const gain = ctx.createGain();
+            gain.gain.setValueAtTime(0.12, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+            noise.connect(filter);
+            filter.connect(gain);
+            gain.connect(ctx.destination);
+            noise.start(ctx.currentTime);
+        });
+    },
+
+    // Sell: coin jingle
+    sell() {
+        this._play(ctx => {
+            [0, 0.06, 0.12].forEach(delay => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(2200 + Math.random() * 400, ctx.currentTime + delay);
+                gain.gain.setValueAtTime(0.08, ctx.currentTime + delay);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.12);
+                osc.start(ctx.currentTime + delay);
+                osc.stop(ctx.currentTime + delay + 0.12);
+            });
+        });
+    },
+
+    // Event start: siren
+    eventStart() {
+        this._play(ctx => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(400, ctx.currentTime);
+            osc.frequency.linearRampToValueAtTime(800, ctx.currentTime + 0.3);
+            osc.frequency.linearRampToValueAtTime(400, ctx.currentTime + 0.6);
+            gain.gain.setValueAtTime(0.1, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+            osc.start(ctx.currentTime);
+            osc.stop(ctx.currentTime + 0.6);
+        });
+    },
+
+    // Cell tap
+    tap() {
+        this._play(ctx => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(600, ctx.currentTime);
+            gain.gain.setValueAtTime(0.05, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.06);
+            osc.start(ctx.currentTime);
+            osc.stop(ctx.currentTime + 0.06);
+        });
+    },
+
+    toggle() {
+        this.muted = !this.muted;
+        return this.muted;
+    }
+};
 
 // ==========================================
 // INITIALIZATION
@@ -82,10 +241,12 @@ function init() {
     setupBales();
     setupRaiders();
     setupAuction();
+    setupSoundToggle();
+    SoundEngine.init();
     loadGame();
     updateUI();
     startGameLoop();
-    
+
     // Check for event
     maybeStartEvent();
 }
@@ -129,11 +290,11 @@ function setupBales() {
 function setupRaiders() {
     $$('.raider-card').forEach(card => {
         const raiderId = parseInt(card.dataset.raider);
-        
+
         card.querySelectorAll('.location-btn').forEach(btn => {
             btn.addEventListener('click', () => sendRaider(raiderId, btn.dataset.location));
         });
-        
+
         card.querySelector('.raider-collect').addEventListener('click', () => collectRaiderLoot(raiderId));
     });
 }
@@ -142,12 +303,12 @@ function setupAuction() {
     $$('.auction-slot.empty').forEach((slot, i) => {
         slot.addEventListener('click', () => openItemPicker(i));
     });
-    
+
     $('picker-close').addEventListener('click', closeItemPicker);
     $('item-picker').addEventListener('click', (e) => {
         if (e.target === $('item-picker')) closeItemPicker();
     });
-    
+
     // Upgrades modal
     $('upgrades-close').addEventListener('click', closeUpgradesModal);
     $('upgrades-modal').addEventListener('click', (e) => {
@@ -158,26 +319,33 @@ function setupAuction() {
     $('btn-upgrade-raider').addEventListener('click', () => buyUpgrade('raiderSpeed'));
 }
 
+function setupSoundToggle() {
+    $('btn-mute').addEventListener('click', () => {
+        const muted = SoundEngine.toggle();
+        $('btn-mute').textContent = muted ? '🔇' : '🔊';
+    });
+}
+
 // ==========================================
 // GRID & ITEMS
 // ==========================================
 
 function renderGrid() {
     const cells = $('merge-field').children;
-    
+
     for (let i = 0; i < 30; i++) {
         const cell = cells[i];
         const item = state.grid[i];
-        
+
         cell.className = 'cell';
         cell.innerHTML = '';
-        
-        if (state.event.active) cell.classList.add('event-mode');
-        
+
+        if (state.event.active && state.event.type === 'theft') cell.classList.add('event-mode');
+
         if (item) {
             cell.classList.add('has-item');
             if (state.selectedCell === i) cell.classList.add('selected');
-            
+
             const itemEl = document.createElement('div');
             itemEl.className = `item grade-${item.grade}`;
             itemEl.innerHTML = `
@@ -189,7 +357,7 @@ function renderGrid() {
             cell.classList.add('empty');
         }
     }
-    
+
     // Merge targets
     if (state.selectedCell !== null) {
         const selectedItem = state.grid[state.selectedCell];
@@ -204,12 +372,14 @@ function renderGrid() {
     }
 }
 
-function createItem(type, grade) { 
-    return { type, grade }; 
+function createItem(type, grade) {
+    // Track best grade in stats
+    if (grade > state.stats.bestGrade) state.stats.bestGrade = grade;
+    return { type, grade };
 }
 
-function getRandomType() { 
-    return ITEM_TYPE_KEYS[Math.floor(Math.random() * ITEM_TYPE_KEYS.length)]; 
+function getRandomType() {
+    return ITEM_TYPE_KEYS[Math.floor(Math.random() * ITEM_TYPE_KEYS.length)];
 }
 
 function getRandomGrade(gradeChances, applyBonus = true) {
@@ -256,10 +426,10 @@ function countEmptyCells() {
 function addItemToGrid(item, animate = true) {
     const idx = findEmptyCell();
     if (idx === -1) return false;
-    
+
     state.grid[idx] = item;
     renderGrid();
-    
+
     if (animate) {
         const itemEl = $('merge-field').children[idx].querySelector('.item');
         if (itemEl) {
@@ -275,11 +445,14 @@ function addItemToGrid(item, animate = true) {
 // ==========================================
 
 function handleCellClick(index) {
-    // Event mode - grab item for free!
-    if (state.event.active && state.grid[index]) {
+    SoundEngine.tap();
+
+    // Event mode (theft) - grab item for free!
+    if (state.event.active && state.event.type === 'theft' && state.grid[index]) {
         const item = state.grid[index];
         const value = GRADES[item.grade].basePrice;
         state.money += value;
+        state.stats.totalEarned += value;
         state.grid[index] = null;
         showToast(`🔥 Украдено! +₽${value}`, 'event');
         renderGrid();
@@ -287,9 +460,9 @@ function handleCellClick(index) {
         saveGame();
         return;
     }
-    
+
     const clickedItem = state.grid[index];
-    
+
     if (state.selectedCell === null) {
         if (clickedItem) {
             state.selectedCell = index;
@@ -297,20 +470,20 @@ function handleCellClick(index) {
         }
         return;
     }
-    
+
     if (state.selectedCell === index) {
         state.selectedCell = null;
         renderGrid();
         return;
     }
-    
+
     const selectedItem = state.grid[state.selectedCell];
-    
+
     if (clickedItem && canMerge(selectedItem, clickedItem)) {
         performMerge(state.selectedCell, index);
         return;
     }
-    
+
     if (!clickedItem) {
         state.grid[index] = selectedItem;
         state.grid[state.selectedCell] = null;
@@ -319,7 +492,7 @@ function handleCellClick(index) {
         saveGame();
         return;
     }
-    
+
     state.selectedCell = index;
     renderGrid();
 }
@@ -331,29 +504,38 @@ function canMerge(a, b) {
 function performMerge(from, to) {
     const item = state.grid[from];
     const newGrade = item.grade + 1;
-    
+
     const cells = $('merge-field').children;
     const fromEl = cells[from].querySelector('.item');
     const toEl = cells[to].querySelector('.item');
-    
+
     if (fromEl) fromEl.classList.add('merging-out');
     if (toEl) toEl.classList.add('merging-out');
-    
+
+    SoundEngine.merge(newGrade);
+    state.stats.mergesDone++;
+
     setTimeout(() => {
         state.grid[from] = null;
         state.grid[to] = createItem(item.type, newGrade);
         state.selectedCell = null;
         renderGrid();
-        
+
         const newEl = cells[to].querySelector('.item');
         if (newEl) {
             newEl.classList.add('merging-in');
             setTimeout(() => newEl.classList.remove('merging-in'), 400);
         }
-        
+
         if (newGrade >= 3) {
             showToast(`${ITEM_TYPES[item.type].emoji} ${GRADES[newGrade].name}!`, 'merge');
         }
+
+        // Tutorial step 2: after first merge
+        if (!state.tutorialComplete && state.tutorialStep === 2) {
+            advanceTutorial();
+        }
+
         saveGame();
     }, 200);
 }
@@ -364,21 +546,23 @@ function performMerge(from, to) {
 
 function openBale(baleType) {
     const bale = BALES[baleType];
-    
+
     if (state.money < bale.price) {
         showToast('Не хватает денег!', 'warning');
         return;
     }
-    
+
     const [minItems, maxItems] = bale.items;
     const itemCount = minItems + Math.floor(Math.random() * (maxItems - minItems + 1));
-    
+
     if (countEmptyCells() < itemCount) {
         showToast(`Нужно минимум ${itemCount} слотов!`, 'warning');
         return;
     }
-    
+
     state.money -= bale.price;
+    state.stats.balesOpened++;
+    SoundEngine.baleOpen();
     updateUI();
 
     let added = 0;
@@ -391,6 +575,12 @@ function openBale(baleType) {
             // Show toast after last item
             if (i === itemCount - 1) {
                 showToast(`📦 Тюк открыт: ${added} вещей!`, 'success');
+
+                // Tutorial step 1: after first bale
+                if (!state.tutorialComplete && state.tutorialStep === 1) {
+                    advanceTutorial();
+                }
+
                 saveGame();
             }
         }, i * 100);
@@ -401,31 +591,55 @@ function openBale(baleType) {
 // SELLING
 // ==========================================
 
+function getEventSellMultiplier() {
+    return (state.event.active && state.event.type === 'market') ? 2 : 1;
+}
+
 function sellAll() {
     let total = 0;
     let count = 0;
-    
+
     const sellMultiplier = 1 + (state.upgrades.sellBonus.level - 1) * 0.2;
-    
+    const eventMultiplier = getEventSellMultiplier();
+
+    const soldItems = [];
+
     for (let i = 0; i < 30; i++) {
         const item = state.grid[i];
         if (item) {
-            total += Math.floor(GRADES[item.grade].basePrice * sellMultiplier);
+            const value = Math.floor(GRADES[item.grade].basePrice * sellMultiplier * eventMultiplier);
+            total += value;
             count++;
+            soldItems.push({ ...item });
             state.grid[i] = null;
         }
     }
-    
+
     if (count === 0) {
         showToast('Нечего продавать!', 'warning');
         return;
     }
-    
+
     state.money += total;
+    state.stats.totalEarned += total;
+    state.stats.itemsSold += count;
     state.selectedCell = null;
+
+    // Check orders
+    checkOrders(soldItems);
+
+    SoundEngine.sell();
     renderGrid();
     updateUI();
-    showToast(`+₽${total} за ${count} вещей`, 'money');
+
+    const marketBonus = eventMultiplier > 1 ? ' (x2 рынок!)' : '';
+    showToast(`+₽${total} за ${count} вещей${marketBonus}`, 'money');
+
+    // Tutorial step 3: after first sell
+    if (!state.tutorialComplete && state.tutorialStep === 3) {
+        advanceTutorial();
+    }
+
     saveGame();
 }
 
@@ -436,18 +650,18 @@ function sellAll() {
 function sendRaider(raiderId, locationKey) {
     const raider = state.raiders[raiderId];
     const location = LOCATIONS[locationKey];
-    
+
     if (raider.status !== 'idle') return;
-    
+
     // Apply speed bonus from upgrades (cap at 70% reduction)
     const speedMultiplier = Math.max(0.3, 1 - (state.upgrades.raiderSpeed.level - 1) * 0.15);
     const adjustedTime = Math.max(10, Math.floor(location.time * speedMultiplier));
-    
+
     raider.status = 'busy';
     raider.location = locationKey;
     raider.endTime = Date.now() + adjustedTime * 1000;
     raider.loot = [];
-    
+
     updateRaiderUI(raiderId);
     showToast(`${raider.name} отправлен на "${location.name}"`, 'success');
     saveGame();
@@ -455,21 +669,21 @@ function sendRaider(raiderId, locationKey) {
 
 function collectRaiderLoot(raiderId) {
     const raider = state.raiders[raiderId];
-    
+
     if (raider.status !== 'ready') return;
-    
+
     const location = LOCATIONS[raider.location];
     const [minItems, maxItems] = location.items;
     const itemCount = minItems + Math.floor(Math.random() * (maxItems - minItems + 1));
-    
+
     if (countEmptyCells() < itemCount) {
         showToast(`Нужно ${itemCount} свободных слотов!`, 'warning');
         return;
     }
-    
+
     // Apply raider level bonus to loot quality
     const qualityBonus = state.upgrades.raiderSpeed.level - 1;
-    
+
     const items = [];
     for (let i = 0; i < itemCount; i++) {
         const type = getRandomType();
@@ -482,18 +696,18 @@ function collectRaiderLoot(raiderId) {
         items.push(createItem(type, grade));
     }
 
-    // Add items with staggered animation to avoid N full re-renders
+    // Add items with staggered animation
     items.forEach((item, i) => {
         setTimeout(() => addItemToGrid(item, true), i * 100);
     });
-    
+
     raider.status = 'idle';
     raider.location = null;
     raider.endTime = null;
-    
+
     updateRaiderUI(raiderId);
     showToast(`${raider.name} принёс ${itemCount} вещей!`, 'success');
-    
+
     // Switch to merge tab
     $$('.tab')[0].click();
     saveGame();
@@ -502,12 +716,12 @@ function collectRaiderLoot(raiderId) {
 function updateRaiderUI(raiderId) {
     const raider = state.raiders[raiderId];
     const card = $$(`.raider-card[data-raider="${raiderId}"]`)[0];
-    
+
     const statusEl = card.querySelector('.raider-status');
     const progressBar = card.querySelector('.raider-progress-bar');
     const locationBtns = card.querySelectorAll('.location-btn');
     const collectBtn = card.querySelector('.raider-collect');
-    
+
     if (raider.status === 'idle') {
         statusEl.textContent = 'Свободен';
         statusEl.className = 'raider-status idle';
@@ -526,7 +740,7 @@ function updateRaiderUI(raiderId) {
         locationBtns.forEach(btn => btn.disabled = true);
         collectBtn.classList.add('ready');
     }
-    
+
     // Badge
     const anyReady = state.raiders.some(r => r.status === 'ready');
     $('raiders-badge').style.display = anyReady ? 'block' : 'none';
@@ -539,7 +753,7 @@ function updateRaiderProgress() {
             const speedMultiplier = Math.max(0.3, 1 - (state.upgrades.raiderSpeed.level - 1) * 0.15);
             const totalTime = Math.max(10, Math.floor(location.time * speedMultiplier)) * 1000;
             const remaining = raider.endTime - Date.now();
-            
+
             if (remaining <= 0) {
                 raider.status = 'ready';
                 updateRaiderUI(id);
@@ -562,9 +776,9 @@ function openItemPicker(slotIndex) {
     currentAuctionSlot = slotIndex;
     const picker = $('item-picker');
     const grid = $('picker-grid');
-    
+
     grid.innerHTML = '';
-    
+
     state.grid.forEach((item, idx) => {
         if (item) {
             const basePrice = GRADES[item.grade].basePrice;
@@ -582,11 +796,11 @@ function openItemPicker(slotIndex) {
             grid.appendChild(el);
         }
     });
-    
+
     if (grid.children.length === 0) {
         grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--text-secondary); padding: 20px;">Нет вещей на складе</div>';
     }
-    
+
     picker.classList.add('active');
 }
 
@@ -599,17 +813,17 @@ function startAuction(slotIndex, gridIndex) {
     const item = state.grid[gridIndex];
     state.grid[gridIndex] = null;
     renderGrid();
-    
+
     const basePrice = GRADES[item.grade].basePrice;
     const bids = generateBids(basePrice);
-    
+
     state.auctions[slotIndex] = {
         item,
         bids,
         currentBid: 0,
-        endTime: Date.now() + 30000, // 30 seconds per bid round
+        endTime: Date.now() + 30000,
     };
-    
+
     renderAuctions();
     saveGame();
 }
@@ -617,34 +831,34 @@ function startAuction(slotIndex, gridIndex) {
 function generateBids(basePrice) {
     const bids = [];
     const numBids = 2 + Math.floor(Math.random() * 3);
-    
+
     for (let i = 0; i < numBids; i++) {
-        const multiplier = 0.7 + Math.random() * 0.8; // 70% - 150% of base
+        const multiplier = 0.7 + Math.random() * 0.8;
         const price = Math.floor(basePrice * multiplier);
         bids.push({
             buyer: NPC_BUYERS[Math.floor(Math.random() * NPC_BUYERS.length)],
             price,
         });
     }
-    
+
     return bids.sort((a, b) => b.price - a.price);
 }
 
 function renderAuctions() {
     state.auctions.forEach((auction, i) => {
         const slot = $(`auction-slot-${i}`);
-        
+
         if (!auction) {
             slot.className = 'auction-slot empty';
             slot.innerHTML = '<div class="plus">+</div><div class="hint">Выставить вещь на аукцион</div>';
             slot.onclick = () => openItemPicker(i);
             return;
         }
-        
+
         const { item, bids, currentBid } = auction;
         const bestBid = bids[currentBid];
         const remaining = Math.max(0, Math.ceil((auction.endTime - Date.now()) / 1000));
-        
+
         slot.className = 'auction-slot';
         slot.onclick = null;
         slot.innerHTML = `
@@ -661,7 +875,7 @@ function renderAuctions() {
                             </div>
                         `).join('')}
                     </div>
-                    <div class="auction-timer">⏱️ ${remaining}с до следующей ставки</div>
+                    <div class="auction-timer">\u23F1\uFE0F ${remaining}с до следующей ставки</div>
                 </div>
                 <div class="auction-actions">
                     <button class="auction-accept" onclick="acceptBid(${i})">Продать за ₽${bestBid.price}</button>
@@ -675,11 +889,18 @@ function renderAuctions() {
 function acceptBid(slotIndex) {
     const auction = state.auctions[slotIndex];
     if (!auction) return;
-    
+
     const bestBid = auction.bids[auction.currentBid];
     state.money += bestBid.price;
+    state.stats.totalEarned += bestBid.price;
+    state.stats.itemsSold++;
+
+    // Check orders for auctioned item
+    checkOrders([auction.item]);
+
     state.auctions[slotIndex] = null;
-    
+
+    SoundEngine.sell();
     renderAuctions();
     updateUI();
     showToast(`${bestBid.buyer} купил за ₽${bestBid.price}!`, 'money');
@@ -689,12 +910,11 @@ function acceptBid(slotIndex) {
 function waitForBetterBid(slotIndex) {
     const auction = state.auctions[slotIndex];
     if (!auction) return;
-    
+
     // Risk: buyer might leave
     if (Math.random() < 0.3) {
         auction.bids.splice(auction.currentBid, 1);
         if (auction.bids.length === 0) {
-            // Everyone left!
             const item = auction.item;
             state.auctions[slotIndex] = null;
             addItemToGrid(item, true);
@@ -703,13 +923,12 @@ function waitForBetterBid(slotIndex) {
             saveGame();
             return;
         }
-        // After splice, currentBid already points to the next bidder
         auction.currentBid = Math.min(auction.currentBid, auction.bids.length - 1);
     } else {
         auction.currentBid = Math.min(auction.currentBid + 1, auction.bids.length - 1);
     }
     auction.endTime = Date.now() + 30000;
-    
+
     renderAuctions();
     showToast('Ждём лучшую ставку...', 'success');
     saveGame();
@@ -730,15 +949,15 @@ function closeUpgradesModal() {
 
 function updateUpgradesUI() {
     const { baleQuality, sellBonus, raiderSpeed } = state.upgrades;
-    
+
     $('upgrade-bale-level').textContent = baleQuality.level;
     $('upgrade-bale-cost').textContent = baleQuality.cost;
     $('btn-upgrade-bale').disabled = state.money < baleQuality.cost;
-    
+
     $('upgrade-sell-level').textContent = sellBonus.level;
     $('upgrade-sell-cost').textContent = sellBonus.cost;
     $('btn-upgrade-sell').disabled = state.money < sellBonus.cost;
-    
+
     $('upgrade-raider-level').textContent = raiderSpeed.level;
     $('upgrade-raider-cost').textContent = raiderSpeed.cost;
     $('btn-upgrade-raider').disabled = state.money < raiderSpeed.cost;
@@ -746,97 +965,374 @@ function updateUpgradesUI() {
 
 function buyUpgrade(upgradeKey) {
     const upgrade = state.upgrades[upgradeKey];
-    
+
     if (state.money < upgrade.cost) {
         showToast('Не хватает денег!', 'warning');
         return;
     }
-    
+
     state.money -= upgrade.cost;
     upgrade.level++;
     upgrade.cost = Math.floor(upgrade.cost * 1.8);
-    
+
     updateUI();
     updateUpgradesUI();
-    showToast('Улучшение куплено! ⬆️', 'success');
+    showToast('Улучшение куплено!', 'success');
     saveGame();
 }
 
 // ==========================================
-// EVENT: День воровства
+// EVENTS
 // ==========================================
 
 function maybeStartEvent() {
-    // Event every 3-5 minutes
     const timeSinceLastEvent = Date.now() - state.lastEventTime;
     const minInterval = 3 * 60 * 1000;
-    
+
     if (timeSinceLastEvent > minInterval && Math.random() < 0.3) {
         startEvent();
     }
 }
 
 function startEvent() {
+    // Pick random event type
+    const types = Object.keys(EVENT_TYPES);
+    const eventType = types[Math.floor(Math.random() * types.length)];
+    const eventInfo = EVENT_TYPES[eventType];
+
     state.event.active = true;
-    state.event.endTime = Date.now() + 30000; // 30 seconds
+    state.event.type = eventType;
+    state.event.endTime = Date.now() + eventInfo.duration;
     state.lastEventTime = Date.now();
-    
-    // Fill grid with free items!
-    const itemsToAdd = Math.min(10, countEmptyCells());
-    for (let i = 0; i < itemsToAdd; i++) {
-        const type = getRandomType();
-        const grade = getRandomGrade({ 1: 40, 2: 35, 3: 20, 4: 5 });
-        addItemToGrid(createItem(type, grade), true);
+
+    SoundEngine.eventStart();
+
+    if (eventType === 'theft') {
+        // Fill grid with free items
+        const itemsToAdd = Math.min(10, countEmptyCells());
+        for (let i = 0; i < itemsToAdd; i++) {
+            const type = getRandomType();
+            const grade = getRandomGrade({ 1: 40, 2: 35, 3: 20, 4: 5 });
+            addItemToGrid(createItem(type, grade), true);
+        }
+    } else if (eventType === 'container') {
+        // Add 5-8 items of grade 3+
+        const itemsToAdd = Math.min(5 + Math.floor(Math.random() * 4), countEmptyCells());
+        for (let i = 0; i < itemsToAdd; i++) {
+            const type = getRandomType();
+            const grade = getRandomGrade({ 3: 50, 4: 35, 5: 15 });
+            addItemToGrid(createItem(type, grade), true);
+        }
     }
-    
+    // market event just enables x2 sell — no items to add
+
     $('event-timer').classList.add('active');
+    $('event-name').textContent = `${eventInfo.icon} ${eventInfo.name}`;
     $('event-overlay').classList.add('active');
-    $('btn-event').style.display = 'flex';
-    $('btn-event').className = 'btn btn-event';
-    
+
+    if (eventType === 'theft') {
+        $('btn-event').style.display = 'flex';
+        $('btn-event').className = 'btn btn-event';
+        $('btn-event').querySelector('.btn-text').textContent = 'Воровство!';
+    } else {
+        $('btn-event').style.display = 'none';
+    }
+
     renderGrid();
-    showToast('🔥 ДЕНЬ ВОРОВСТВА! Хватай всё бесплатно!', 'event');
+    showToast(`${eventInfo.icon} ${eventInfo.name}! ${eventInfo.description}`, 'event');
     saveGame();
 }
 
 function endEvent() {
     state.event.active = false;
+    state.event.type = null;
     state.event.endTime = null;
-    
+
     $('event-timer').classList.remove('active');
     $('event-overlay').classList.remove('active');
     $('btn-event').style.display = 'none';
-    
+
     renderGrid();
-    showToast('День воровства окончен!', 'event');
+    showToast('Ивент окончен!', 'event');
     saveGame();
 }
 
 function updateEventTimer() {
     if (!state.event.active) return;
-    
+
     const remaining = Math.max(0, state.event.endTime - Date.now());
-    
+
     if (remaining <= 0) {
         endEvent();
         return;
     }
-    
+
     const seconds = Math.ceil(remaining / 1000);
     $('event-countdown').textContent = `00:${seconds.toString().padStart(2, '0')}`;
 }
 
 function grabEventItem() {
-    // Find random item and grab it
     const items = [];
     state.grid.forEach((item, idx) => {
         if (item) items.push(idx);
     });
-    
     if (items.length === 0) return;
-    
     const idx = items[Math.floor(Math.random() * items.length)];
     handleCellClick(idx);
+}
+
+// ==========================================
+// ORDERS SYSTEM
+// ==========================================
+
+function generateOrder() {
+    const types = ITEM_TYPE_KEYS;
+    const type = types[Math.floor(Math.random() * types.length)];
+    const grade = 2 + Math.floor(Math.random() * 3); // 2-4
+    const quantity = 1 + Math.floor(Math.random() * 3); // 1-3
+    const reward = GRADES[grade].basePrice * quantity * (1.5 + Math.random());
+
+    return {
+        type,
+        grade,
+        quantity,
+        collected: 0,
+        reward: Math.floor(reward),
+        id: Date.now() + Math.random(),
+    };
+}
+
+function initOrders() {
+    while (state.orders.length < 3) {
+        state.orders.push(generateOrder());
+    }
+}
+
+function checkOrders(soldItems) {
+    let ordersCompleted = 0;
+
+    for (const sold of soldItems) {
+        for (const order of state.orders) {
+            if (order.collected >= order.quantity) continue;
+            if (sold.type === order.type && sold.grade >= order.grade) {
+                order.collected++;
+            }
+        }
+    }
+
+    // Check completed orders
+    for (let i = state.orders.length - 1; i >= 0; i--) {
+        const order = state.orders[i];
+        if (order.collected >= order.quantity) {
+            state.money += order.reward;
+            state.stats.totalEarned += order.reward;
+            ordersCompleted++;
+            showToast(`Заказ выполнен! +₽${order.reward}`, 'money');
+            state.orders.splice(i, 1);
+        }
+    }
+
+    // Refill orders
+    if (ordersCompleted > 0) {
+        initOrders();
+        renderOrders();
+        updateUI();
+    }
+}
+
+function renderOrders() {
+    const container = $('orders-list');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    state.orders.forEach(order => {
+        const el = document.createElement('div');
+        el.className = 'order-card';
+        const gradeName = GRADES[order.grade].name;
+        const emoji = ITEM_TYPES[order.type].emoji;
+        const progress = `${order.collected}/${order.quantity}`;
+        el.innerHTML = `
+            <div class="order-target">
+                <span class="order-emoji">${emoji}</span>
+                <div class="order-info">
+                    <div class="order-desc">${ITEM_TYPES[order.type].name} (${gradeName}+)</div>
+                    <div class="order-progress">${progress}</div>
+                </div>
+            </div>
+            <div class="order-reward">₽${order.reward}</div>
+        `;
+        container.appendChild(el);
+    });
+}
+
+// ==========================================
+// STATS
+// ==========================================
+
+function renderStats() {
+    $('stat-earned').textContent = formatNumber(state.stats.totalEarned);
+    $('stat-sold').textContent = state.stats.itemsSold;
+    $('stat-best-grade').textContent = GRADES[state.stats.bestGrade]?.name || '—';
+    $('stat-bales').textContent = state.stats.balesOpened;
+    $('stat-merges').textContent = state.stats.mergesDone;
+}
+
+// ==========================================
+// TUTORIAL
+// ==========================================
+
+const TUTORIAL_STEPS = [
+    {
+        target: '#btn-quick-bale',
+        text: 'Купи свой первый тюк!',
+        arrow: 'up',
+    },
+    null, // wait for bale open, then advance
+    {
+        target: '#btn-sell-all',
+        text: 'Нажми на одну вещь, потом на такую же — они объединятся!',
+        arrow: 'none',
+        highlightMergeTargets: true,
+    },
+    {
+        target: '#btn-sell-all',
+        text: 'Продай всё и заработай!',
+        arrow: 'up',
+    },
+    {
+        text: 'Отлично! Теперь ты знаешь основы.\nМержи вещи, повышай грейд, зарабатывай!',
+        final: true,
+    },
+];
+
+function startTutorial() {
+    if (state.tutorialComplete) return;
+    state.tutorialStep = 0;
+    showTutorialStep();
+}
+
+function showTutorialStep() {
+    removeTutorialOverlay();
+
+    const stepData = TUTORIAL_STEPS[state.tutorialStep];
+    if (!stepData) return;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'tutorial-overlay';
+
+    if (stepData.final) {
+        overlay.innerHTML = `
+            <div class="tutorial-final">
+                <div class="tutorial-text">${stepData.text}</div>
+                <button class="tutorial-btn" id="tutorial-finish">Понял!</button>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        $('tutorial-finish').addEventListener('click', () => {
+            state.tutorialComplete = true;
+            removeTutorialOverlay();
+            saveGame();
+        });
+        return;
+    }
+
+    overlay.innerHTML = `<div class="tutorial-hint">${stepData.text}</div>`;
+
+    if (stepData.target) {
+        const targetEl = document.querySelector(stepData.target);
+        if (targetEl) {
+            targetEl.classList.add('tutorial-highlight');
+        }
+    }
+
+    document.body.appendChild(overlay);
+
+    // For step 0, clicking overlay or bale button advances
+    if (state.tutorialStep === 0) {
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                // ignore clicks on overlay bg
+            }
+        });
+    }
+}
+
+function advanceTutorial() {
+    state.tutorialStep++;
+    if (state.tutorialStep >= TUTORIAL_STEPS.length) {
+        state.tutorialComplete = true;
+        removeTutorialOverlay();
+        saveGame();
+        return;
+    }
+    showTutorialStep();
+}
+
+function removeTutorialOverlay() {
+    const overlay = $('tutorial-overlay');
+    if (overlay) overlay.remove();
+    $$('.tutorial-highlight').forEach(el => el.classList.remove('tutorial-highlight'));
+}
+
+// ==========================================
+// OFFLINE INCOME
+// ==========================================
+
+function checkOfflineIncome(lastSaveTime) {
+    const elapsed = Date.now() - lastSaveTime;
+    const seconds = Math.floor(elapsed / 1000);
+
+    if (seconds < 60) return; // Less than a minute
+
+    const baseRate = 1; // ₽1/sec
+    const tradeMultiplier = state.upgrades.sellBonus.level;
+    const income = seconds * baseRate * tradeMultiplier;
+
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    let timeStr = '';
+    if (hours > 0) timeStr += `${hours}ч `;
+    if (minutes > 0) timeStr += `${minutes}м`;
+    if (!timeStr) timeStr = `${seconds}с`;
+
+    showOfflinePopup(timeStr.trim(), income);
+}
+
+function showOfflinePopup(timeStr, income) {
+    const popup = document.createElement('div');
+    popup.id = 'offline-popup';
+    popup.innerHTML = `
+        <div class="offline-content">
+            <div class="offline-icon">💤</div>
+            <div class="offline-title">Пока тебя не было</div>
+            <div class="offline-time">${timeStr}</div>
+            <div class="offline-text">Байеры заработали</div>
+            <div class="offline-amount">₽${formatNumber(income)}</div>
+            <button class="offline-btn" id="offline-collect">Забрать</button>
+            <button class="offline-btn offline-x2" id="offline-x2">x2 за рекламу</button>
+        </div>
+    `;
+    document.body.appendChild(popup);
+
+    $('offline-collect').addEventListener('click', () => {
+        state.money += income;
+        state.stats.totalEarned += income;
+        updateUI();
+        saveGame();
+        popup.remove();
+    });
+
+    $('offline-x2').addEventListener('click', () => {
+        // Placeholder for rewarded ad — just give x2 for now
+        const doubled = income * 2;
+        state.money += doubled;
+        state.stats.totalEarned += doubled;
+        updateUI();
+        saveGame();
+        showToast(`+₽${formatNumber(doubled)} (x2)!`, 'money');
+        popup.remove();
+    });
 }
 
 // ==========================================
@@ -848,7 +1344,7 @@ function startGameLoop() {
         updateRaiderProgress();
         updateEventTimer();
         renderAuctions();
-        
+
         // Random event check
         if (!state.event.active && Math.random() < 0.001) {
             maybeStartEvent();
@@ -862,7 +1358,7 @@ function startGameLoop() {
 
 function updateUI() {
     $('money-value').textContent = formatNumber(state.money);
-    
+
     // Update bale buttons
     $$('.bale-btn').forEach(btn => {
         const bale = BALES[btn.dataset.bale];
@@ -896,6 +1392,11 @@ function saveGame() {
         auctions: state.auctions,
         upgrades: state.upgrades,
         lastEventTime: state.lastEventTime,
+        tutorialComplete: state.tutorialComplete,
+        tutorialStep: state.tutorialStep,
+        stats: state.stats,
+        orders: state.orders,
+        lastSaveTime: Date.now(),
     };
     localStorage.setItem('svalka_save', JSON.stringify(data));
 }
@@ -911,7 +1412,12 @@ function loadGame() {
             state.auctions = data.auctions || [null, null];
             state.upgrades = data.upgrades || state.upgrades;
             state.lastEventTime = data.lastEventTime || 0;
-            
+            state.tutorialComplete = data.tutorialComplete || false;
+            state.tutorialStep = data.tutorialStep || 0;
+            state.stats = data.stats || state.stats;
+            state.orders = data.orders || [];
+            state.lastSaveTime = data.lastSaveTime || Date.now();
+
             // Update raider statuses
             state.raiders.forEach((raider, id) => {
                 if (raider.status === 'busy' && raider.endTime && Date.now() >= raider.endTime) {
@@ -929,6 +1435,22 @@ function loadGame() {
 
             renderGrid();
             renderAuctions();
+
+            // Init orders if needed
+            initOrders();
+            renderOrders();
+            renderStats();
+
+            // Check offline income
+            if (data.lastSaveTime) {
+                checkOfflineIncome(data.lastSaveTime);
+            }
+        } else {
+            // First launch — start tutorial
+            initOrders();
+            renderOrders();
+            renderStats();
+            setTimeout(() => startTutorial(), 500);
         }
     } catch (e) {
         console.error('Load failed:', e);
