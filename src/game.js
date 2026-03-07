@@ -243,9 +243,13 @@ function init() {
     setupAuction();
     setupSoundToggle();
     SoundEngine.init();
+    MusicManager.init();
     loadGame();
     updateUI();
     startGameLoop();
+
+    // Start main music
+    MusicManager.play('main');
 
     // Check for event
     maybeStartEvent();
@@ -270,6 +274,20 @@ function setupTabs() {
             $$('.panel').forEach(p => p.classList.remove('active'));
             tab.classList.add('active');
             $(`panel-${tab.dataset.tab}`).classList.add('active');
+
+            // Switch music based on tab (event music takes priority)
+            if (!state.event.active) {
+                if (tab.dataset.tab === 'auction') {
+                    MusicManager.play('auction');
+                } else {
+                    MusicManager.play('main');
+                }
+            }
+
+            // Update stats when switching to stats tab
+            if (tab.dataset.tab === 'stats') {
+                renderStats();
+            }
         });
     });
 }
@@ -320,8 +338,16 @@ function setupAuction() {
 }
 
 function setupSoundToggle() {
+    // Sync initial state from MusicManager (persisted in localStorage)
+    const initialMuted = MusicManager.isMuted();
+    if (initialMuted) {
+        SoundEngine.muted = true;
+        $('btn-mute').textContent = '🔇';
+    }
+
     $('btn-mute').addEventListener('click', () => {
         const muted = SoundEngine.toggle();
+        MusicManager.setMuted(muted);
         $('btn-mute').textContent = muted ? '🔇' : '🔊';
     });
 }
@@ -1006,6 +1032,7 @@ function startEvent() {
     state.lastEventTime = Date.now();
 
     SoundEngine.eventStart();
+    MusicManager.play('event');
 
     if (eventType === 'theft') {
         // Fill grid with free items
@@ -1051,6 +1078,10 @@ function endEvent() {
     $('event-timer').classList.remove('active');
     $('event-overlay').classList.remove('active');
     $('btn-event').style.display = 'none';
+
+    // Return to appropriate music
+    const activeTab = document.querySelector('.tab.active');
+    MusicManager.play(activeTab && activeTab.dataset.tab === 'auction' ? 'auction' : 'main');
 
     renderGrid();
     showToast('Ивент окончен!', 'event');
@@ -1324,15 +1355,41 @@ function showOfflinePopup(timeStr, income) {
     });
 
     $('offline-x2').addEventListener('click', () => {
-        // Placeholder for rewarded ad — just give x2 for now
-        const doubled = income * 2;
-        state.money += doubled;
-        state.stats.totalEarned += doubled;
-        updateUI();
-        saveGame();
-        showToast(`+₽${formatNumber(doubled)} (x2)!`, 'money');
-        popup.remove();
+        // Placeholder for rewarded ad via Yandex SDK
+        // When real ad is integrated, call onAdOpen() before showing,
+        // then onAdClose()/onAdError() in callbacks
+        onAdOpen();
+        // Simulate ad completion
+        setTimeout(() => {
+            onAdClose();
+            const doubled = income * 2;
+            state.money += doubled;
+            state.stats.totalEarned += doubled;
+            updateUI();
+            saveGame();
+            showToast(`+₽${formatNumber(doubled)} (x2)!`, 'money');
+            popup.remove();
+        }, 300);
     });
+}
+
+// ==========================================
+// AD HELPERS (Yandex SDK requirement: mute all audio during ads)
+// ==========================================
+
+function onAdOpen() {
+    SoundEngine.muted = true;
+    MusicManager.pauseAll();
+}
+
+function onAdClose() {
+    const muted = MusicManager.isMuted();
+    SoundEngine.muted = muted;
+    MusicManager.resumeAll();
+}
+
+function onAdError() {
+    onAdClose(); // Same cleanup
 }
 
 // ==========================================
