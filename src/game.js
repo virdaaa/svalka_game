@@ -213,29 +213,32 @@ function getRandomType() {
 }
 
 function getRandomGrade(gradeChances, applyBonus = true) {
-    const rand = Math.random() * 100;
-    let cumulative = 0;
-    
-    // Apply bale quality bonus - shifts chances toward higher grades
     const qualityBonus = applyBonus ? (state.upgrades.baleQuality.level - 1) * 5 : 0;
-    
+
     const grades = Object.entries(gradeChances).sort((a, b) => parseInt(b[0]) - parseInt(a[0]));
-    
-    for (const [grade, baseChance] of grades) {
-        // Higher grades get bonus, lower grades get reduced
+
+    // Calculate adjusted chances
+    const adjusted = grades.map(([grade, baseChance]) => {
         const gradeNum = parseInt(grade);
-        let adjustedChance = baseChance;
-        
+        let chance = baseChance;
         if (gradeNum >= 3) {
-            adjustedChance = baseChance + qualityBonus;
+            chance = baseChance + qualityBonus;
         } else if (gradeNum === 1) {
-            adjustedChance = Math.max(10, baseChance - qualityBonus * 2);
+            chance = Math.max(5, baseChance - qualityBonus * 2);
         }
-        
-        cumulative += adjustedChance;
+        return [gradeNum, chance];
+    });
+
+    // Normalize to sum to 100
+    const total = adjusted.reduce((sum, [, c]) => sum + c, 0);
+    const rand = Math.random() * total;
+
+    let cumulative = 0;
+    for (const [gradeNum, chance] of adjusted) {
+        cumulative += chance;
         if (rand < cumulative) return gradeNum;
     }
-    return 1;
+    return parseInt(grades[grades.length - 1][0]);
 }
 
 function findEmptyCell() {
@@ -377,20 +380,21 @@ function openBale(baleType) {
     
     state.money -= bale.price;
     updateUI();
-    
+
     let added = 0;
     for (let i = 0; i < itemCount; i++) {
         setTimeout(() => {
             const type = getRandomType();
             const grade = getRandomGrade(bale.grades);
             if (addItemToGrid(createItem(type, grade), true)) added++;
+
+            // Show toast after last item
+            if (i === itemCount - 1) {
+                showToast(`📦 Тюк открыт: ${added} вещей!`, 'success');
+                saveGame();
+            }
         }, i * 100);
     }
-    
-    setTimeout(() => {
-        showToast(`📦 Тюк открыт: ${itemCount} вещей!`, 'success');
-        saveGame();
-    }, itemCount * 100);
 }
 
 // ==========================================
@@ -435,8 +439,8 @@ function sendRaider(raiderId, locationKey) {
     
     if (raider.status !== 'idle') return;
     
-    // Apply speed bonus from upgrades
-    const speedMultiplier = 1 - (state.upgrades.raiderSpeed.level - 1) * 0.15;
+    // Apply speed bonus from upgrades (cap at 70% reduction)
+    const speedMultiplier = Math.max(0.3, 1 - (state.upgrades.raiderSpeed.level - 1) * 0.15);
     const adjustedTime = Math.max(10, Math.floor(location.time * speedMultiplier));
     
     raider.status = 'busy';
@@ -466,17 +470,22 @@ function collectRaiderLoot(raiderId) {
     // Apply raider level bonus to loot quality
     const qualityBonus = state.upgrades.raiderSpeed.level - 1;
     
+    const items = [];
     for (let i = 0; i < itemCount; i++) {
         const type = getRandomType();
-        // Boost chances slightly based on raider upgrade
         const boostedChances = {...location.grades};
         if (qualityBonus > 0 && boostedChances[3]) {
             boostedChances[3] = (boostedChances[3] || 0) + qualityBonus * 3;
             boostedChances[1] = Math.max(10, (boostedChances[1] || 50) - qualityBonus * 5);
         }
         const grade = getRandomGrade(boostedChances, false);
-        addItemToGrid(createItem(type, grade), true);
+        items.push(createItem(type, grade));
     }
+
+    // Add items with staggered animation to avoid N full re-renders
+    items.forEach((item, i) => {
+        setTimeout(() => addItemToGrid(item, true), i * 100);
+    });
     
     raider.status = 'idle';
     raider.location = null;
@@ -527,7 +536,7 @@ function updateRaiderProgress() {
     state.raiders.forEach((raider, id) => {
         if (raider.status === 'busy' && raider.endTime) {
             const location = LOCATIONS[raider.location];
-            const speedMultiplier = 1 - (state.upgrades.raiderSpeed.level - 1) * 0.15;
+            const speedMultiplier = Math.max(0.3, 1 - (state.upgrades.raiderSpeed.level - 1) * 0.15);
             const totalTime = Math.max(10, Math.floor(location.time * speedMultiplier)) * 1000;
             const remaining = raider.endTime - Date.now();
             
@@ -694,9 +703,11 @@ function waitForBetterBid(slotIndex) {
             saveGame();
             return;
         }
+        // After splice, currentBid already points to the next bidder
+        auction.currentBid = Math.min(auction.currentBid, auction.bids.length - 1);
+    } else {
+        auction.currentBid = Math.min(auction.currentBid + 1, auction.bids.length - 1);
     }
-    
-    auction.currentBid = Math.min(auction.currentBid + 1, auction.bids.length - 1);
     auction.endTime = Date.now() + 30000;
     
     renderAuctions();
@@ -908,7 +919,14 @@ function loadGame() {
                 }
                 updateRaiderUI(id);
             });
-            
+
+            // Handle expired auctions
+            state.auctions.forEach((auction, i) => {
+                if (auction && auction.endTime && Date.now() >= auction.endTime) {
+                    auction.endTime = Date.now() + 30000;
+                }
+            });
+
             renderGrid();
             renderAuctions();
         }

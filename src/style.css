@@ -836,6 +836,7 @@ body {
 }
 
 .toast.success { border-color: var(--grade-1); background: linear-gradient(135deg, rgba(124, 179, 66, 0.2), var(--bg-card)); }
+.toast.warning { border-color: var(--accent-orange); background: linear-gradient(135deg, rgba(224, 123, 57, 0.2), var(--bg-card)); }
 .toast.money { border-color: var(--accent-gold); background: linear-gradient(135deg, rgba(212, 168, 75, 0.2), var(--bg-card)); }
 .toast.merge { border-color: var(--grade-3); background: linear-gradient(135deg, rgba(171, 71, 188, 0.2), var(--bg-card)); }
 .toast.event { border-color: var(--accent-red); background: linear-gradient(135deg, rgba(196, 68, 68, 0.3), var(--bg-card)); }
