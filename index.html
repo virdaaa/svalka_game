@@ -15,7 +15,10 @@
         <header id="header">
             <div class="logo">SVALKA</div>
             <div class="header-right">
-                <div id="event-timer">🔥 День воровства: <span id="event-countdown">00:00</span></div>
+                <button id="btn-mute" class="btn-mute-toggle">🔊</button>
+                <div id="event-timer">
+                    <span id="event-name">🔥 День воровства</span>: <span id="event-countdown">00:00</span>
+                </div>
                 <div class="money">
                     <span>₽</span>
                     <span id="money-value">0</span>
@@ -41,6 +44,10 @@
             <div class="tab" data-tab="auction">
                 <span class="tab-icon">🔨</span>
                 <span>Аукцион</span>
+            </div>
+            <div class="tab" data-tab="stats">
+                <span class="tab-icon">📊</span>
+                <span>Стата</span>
             </div>
         </nav>
 
@@ -84,7 +91,7 @@
                     <div class="bale-info">
                         <div class="bale-name">Европа</div>
                         <div class="bale-desc">Стандартный микс из Германии</div>
-                        <div class="bale-stats">3-6 вещей • Шанс синего: 20%</div>
+                        <div class="bale-stats">3-6 вещей</div>
                     </div>
                     <button class="bale-btn" data-bale="europe">₽100</button>
                 </div>
@@ -93,7 +100,7 @@
                     <div class="bale-info">
                         <div class="bale-name">Япония</div>
                         <div class="bale-desc">Качественный японский винтаж</div>
-                        <div class="bale-stats">2-4 вещи • Шанс фиолетового: 15%</div>
+                        <div class="bale-stats">2-4 вещи</div>
                     </div>
                     <button class="bale-btn" data-bale="japan">₽350</button>
                 </div>
@@ -102,7 +109,7 @@
                     <div class="bale-info">
                         <div class="bale-name">USA Vintage</div>
                         <div class="bale-desc">Американская классика 70-80х</div>
-                        <div class="bale-stats">3-5 вещей • Шанс оранжевого: 10%</div>
+                        <div class="bale-stats">3-5 вещей</div>
                     </div>
                     <button class="bale-btn" data-bale="usa">₽500</button>
                 </div>
@@ -111,7 +118,7 @@
                     <div class="bale-info">
                         <div class="bale-name">СССР</div>
                         <div class="bale-desc">Советский dead stock</div>
-                        <div class="bale-stats">1-3 вещи • Шанс грааля: 5%</div>
+                        <div class="bale-stats">1-3 вещи</div>
                     </div>
                     <button class="bale-btn" data-bale="ussr">₽1000</button>
                 </div>
@@ -119,12 +126,18 @@
 
             <!-- БАЙЕРЫ -->
             <div class="panel" id="panel-raiders">
+                <!-- Orders -->
+                <div class="orders-section">
+                    <div class="section-title">Заказы</div>
+                    <div id="orders-list"></div>
+                </div>
+
                 <div class="raider-card" data-raider="0">
                     <div class="raider-header">
                         <div class="raider-avatar">🧔</div>
                         <div class="raider-info">
                             <div class="raider-name">Борис</div>
-                            <div class="raider-level">Уровень 1 • Стажёр</div>
+                            <div class="raider-level">Уровень 1</div>
                         </div>
                         <div class="raider-status idle">Свободен</div>
                     </div>
@@ -141,7 +154,7 @@
                         <div class="raider-avatar">👩</div>
                         <div class="raider-info">
                             <div class="raider-name">Маша</div>
-                            <div class="raider-level">Уровень 1 • Стажёр</div>
+                            <div class="raider-level">Уровень 1</div>
                         </div>
                         <div class="raider-status idle">Свободна</div>
                     </div>
@@ -164,6 +177,35 @@
                 <div class="auction-slot empty" id="auction-slot-1">
                     <div class="plus">+</div>
                     <div class="hint">Выставить вещь на аукцион</div>
+                </div>
+            </div>
+
+            <!-- СТАТИСТИКА -->
+            <div class="panel" id="panel-stats">
+                <div class="stats-card">
+                    <div class="section-title">Статистика</div>
+                    <div class="stats-grid">
+                        <div class="stat-row">
+                            <span class="stat-label">💰 Всего заработано</span>
+                            <span class="stat-value" id="stat-earned">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">📦 Вещей продано</span>
+                            <span class="stat-value" id="stat-sold">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">⭐ Лучший грейд</span>
+                            <span class="stat-value" id="stat-best-grade">—</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">🎁 Тюков открыто</span>
+                            <span class="stat-value" id="stat-bales">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">🔀 Мержей сделано</span>
+                            <span class="stat-value" id="stat-merges">0</span>
+                        </div>
+                    </div>
                 </div>
             </div>
         </main>
