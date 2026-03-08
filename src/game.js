@@ -263,7 +263,7 @@ async function submitLeaderboardScore() {
     if (!ysdk) return;
     try {
         const lb = await ysdk.getLeaderboards();
-        await lb.setLeaderboardScore('total_earned', Math.floor(state.stats.totalEarned));
+        await lb.setLeaderboardScore('totalearned', Math.floor(state.stats.totalEarned));
     } catch (e) {
         // Not authenticated — silently ignore
     }
@@ -295,7 +295,7 @@ async function showLeaderboard() {
 
     try {
         const lb = await ysdk.getLeaderboards();
-        const result = await lb.getLeaderboardEntries('total_earned', {
+        const result = await lb.getLeaderboardEntries('totalearned', {
             quantityTop: 10,
             includeUser: true,
         });
