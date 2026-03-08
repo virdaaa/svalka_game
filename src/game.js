@@ -1390,12 +1390,10 @@ function showTutorialStep() {
 
     document.body.appendChild(overlay);
 
-    // For step 0, clicking overlay or bale button advances
+    // For step 0, clicking anywhere on overlay calls openBale directly
     if (state.tutorialStep === 0) {
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) {
-                // ignore clicks on overlay bg
-            }
+        overlay.addEventListener('click', () => {
+            openBale('europe');
         });
     }
 }
