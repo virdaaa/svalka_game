@@ -250,9 +250,6 @@ async function initYandexSDK() {
 
         // Show leaderboard button
         $('btn-leaderboard').style.display = 'block';
-
-        // Signal game ready
-        ysdk.features.LoadingAPI?.ready();
     } catch (e) {
         // SDK not available (local dev, etc.)
         ysdk = null;
@@ -331,7 +328,7 @@ function closeLeaderboard() {
 // INITIALIZATION
 // ==========================================
 
-function init() {
+async function init() {
     createGrid();
     setupTabs();
     setupMergeControls();
@@ -342,7 +339,7 @@ function init() {
     setupLeaderboard();
     SoundEngine.init();
     MusicManager.init();
-    initYandexSDK();
+    await initYandexSDK();
     loadGame();
     updateUI();
     startGameLoop();
@@ -352,6 +349,12 @@ function init() {
 
     // Check for event
     maybeStartEvent();
+
+    // Signal game ready AFTER all resources loaded
+    if (ysdk) {
+        ysdk.features.LoadingAPI?.ready();
+    }
+    gameplayStart();
 }
 
 function setupLeaderboard() {
@@ -1464,22 +1467,58 @@ function showOfflinePopup(timeStr, income) {
     });
 
     $('offline-x2').addEventListener('click', () => {
-        // Placeholder for rewarded ad via Yandex SDK
-        // When real ad is integrated, call onAdOpen() before showing,
-        // then onAdClose()/onAdError() in callbacks
-        onAdOpen();
-        // Simulate ad completion
-        setTimeout(() => {
-            onAdClose();
-            const doubled = income * 2;
-            state.money += doubled;
-            state.stats.totalEarned += doubled;
+        if (!ysdk) {
+            // No SDK — just give x1
+            state.money += income;
+            state.stats.totalEarned += income;
             updateUI();
             saveGame();
-            showToast(`+₽${formatNumber(doubled)} (x2)!`, 'money');
             popup.remove();
-        }, 300);
+            return;
+        }
+        ysdk.adv.showRewardedVideo({
+            callbacks: {
+                onOpen: () => onAdOpen(),
+                onRewarded: () => {
+                    const doubled = income * 2;
+                    state.money += doubled;
+                    state.stats.totalEarned += doubled;
+                    updateUI();
+                    saveGame();
+                    showToast(`+₽${formatNumber(doubled)} (x2)!`, 'money');
+                },
+                onClose: () => {
+                    onAdClose();
+                    popup.remove();
+                },
+                onError: () => {
+                    onAdError();
+                    // Fallback: give x1
+                    state.money += income;
+                    state.stats.totalEarned += income;
+                    updateUI();
+                    saveGame();
+                    popup.remove();
+                },
+            }
+        });
     });
+}
+
+// ==========================================
+// GAMEPLAY API (Yandex req 1.19.3)
+// ==========================================
+
+function gameplayStart() {
+    if (ysdk) {
+        try { ysdk.features.GameplayAPI?.start(); } catch(e) {}
+    }
+}
+
+function gameplayStop() {
+    if (ysdk) {
+        try { ysdk.features.GameplayAPI?.stop(); } catch(e) {}
+    }
 }
 
 // ==========================================
@@ -1487,6 +1526,7 @@ function showOfflinePopup(timeStr, income) {
 // ==========================================
 
 function onAdOpen() {
+    gameplayStop();
     SoundEngine.muted = true;
     MusicManager.pauseAll();
 }
@@ -1495,6 +1535,7 @@ function onAdClose() {
     const muted = MusicManager.isMuted();
     SoundEngine.muted = muted;
     MusicManager.resumeAll();
+    gameplayStart();
 }
 
 function onAdError() {
@@ -1626,5 +1667,20 @@ function loadGame() {
 // ==========================================
 // START
 // ==========================================
+
+// Yandex req 1.3: mute all audio when tab loses focus
+// Yandex req 1.19.3: pause gameplay on tab hide
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        SoundEngine.muted = true;
+        MusicManager.pauseAll();
+        gameplayStop();
+    } else {
+        const muted = MusicManager.isMuted();
+        SoundEngine.muted = muted;
+        MusicManager.resumeAll();
+        gameplayStart();
+    }
+});
 
 document.addEventListener('DOMContentLoaded', init);
